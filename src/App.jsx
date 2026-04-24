@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { db, storage } from './firebase'
 import {
-  doc, getDoc, setDoc, onSnapshot, collection,
+  doc, getDoc, setDoc, updateDoc, onSnapshot, collection,
   addDoc, query, orderBy, serverTimestamp
 } from 'firebase/firestore'
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
@@ -846,7 +846,11 @@ export default function App() {
       updates.completedAt_all = null
     }
 
-    await setDoc(doc(db, 'challenge', 'progress'), updates, { merge: true })
+    try {
+      await updateDoc(doc(db, 'challenge', 'progress'), updates)
+    } catch {
+      await setDoc(doc(db, 'challenge', 'progress'), updates)
+    }
   }
 
   // Delete media
@@ -874,8 +878,11 @@ export default function App() {
   useEffect(() => {
     const colors = ['#f47b20', '#f5f0e8', '#ffffff', '#c45f10']
 
+    const now = Date.now()
+    const RECENT = 10000 // 10 seconds
+
     // Check overall completion
-    if (completionTimes.all && !firedConfetti.current.all) {
+    if (completionTimes.all && !firedConfetti.current.all && (now - completionTimes.all) < RECENT) {
       firedConfetti.current.all = true
       const positions = [
         { x: 0.5, y: 0.6 },
@@ -923,7 +930,7 @@ export default function App() {
 
     // Check individual category completions
     CHALLENGE_ITEMS.forEach(item => {
-      if (completionTimes[item.id] && !firedConfetti.current[item.id]) {
+      if (completionTimes[item.id] && !firedConfetti.current[item.id] && (now - completionTimes[item.id]) < RECENT) {
         firedConfetti.current[item.id] = true
         confetti({
           particleCount: 80,
