@@ -550,3 +550,125 @@
     font-size: 24px;
   }
 }
+
+/* ── TAUNTS ── */
+.taunt-message {
+  margin-top: 12px;
+  color: var(--text-body);
+  font-size: 13px;
+  font-style: italic;
+}
+
+/* ── MEDIA META ── */
+.media-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 8px;
+  background: rgba(0,0,0,0.4);
+  gap: 6px;
+}
+
+.media-uploader {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--orange);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.media-time {
+  font-family: 'Special Elite', serif;
+  font-size: 10px;
+  color: var(--text-body);
+  white-space: nowrap;
+}
+
+/* ── COMMENTS ── */
+.comment-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.comment-form {
+  background: var(--dark2);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 8px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.comment-textarea {
+  resize: vertical;
+  min-height: 80px;
+  margin-top: 0;
+}
+
+.comment-char-count {
+  font-size: 11px;
+  color: var(--text-body);
+  text-align: right;
+  margin-top: 4px;
+}
+
+.comment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.comment-item {
+  background: var(--dark2);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+
+.comment-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.comment-name {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--orange);
+}
+
+.comment-text {
+  font-size: 14px;
+  color: var(--milk);
+  line-height: 1.5;
+}
+
+/* ── LAST UPDATED ── */
+.last-updated {
+  font-size: 12px;
+  color: var(--text-body);
+  margin-top: 8px;
+  font-style: italic;
+}
+
+/* ── COMMENT DELETE ── */
+.comment-delete {
+  background: transparent;
+  border: none;
+  color: var(--text-body);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  transition: color 0.15s;
+}
+
+.comment-delete:hover {
+  color: var(--red);
+}

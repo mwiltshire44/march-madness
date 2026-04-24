@@ -6,9 +6,10 @@ import {
 } from 'firebase/firestore'
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
 import './App.css'
+import confetti from 'canvas-confetti'
 
 // ─── PASSWORDS ──────────────────────────────────────────────────────────────
-const ADMIN_PASSWORD = 'ripMicah'      // Change this to whatever you want
+const ADMIN_PASSWORD = 'Milkman'      // Change this to whatever you want
 const UPLOAD_PASSWORD = 'milkgang'     // Change this to whatever you want
 
 // ─── CHALLENGE END TIME ─────────────────────────────────────────────────────
@@ -90,6 +91,70 @@ function formatCountdown(ms) {
   const m = Math.floor((totalSecs % 3600) / 60)
   const s = totalSecs % 60
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
+// ─── TAUNTS ─────────────────────────────────────────────────────────────────
+const TAUNTS = [
+  "He's doing it. Unfortunately.",
+  "Current status: probably regretting his bracket picks.",
+  "Somewhere out there, a donut is laughing at him.",
+  "Let this be a warning not to pick chalk.",
+  "In lieu of flowers, please send donuts.",
+  "He knew the risks. He picked anyway.",
+]
+
+function TauntMessage() {
+  const [index, setIndex] = useState(() => Math.floor(Date.now() / 3600000) % TAUNTS.length)
+
+  useEffect(() => {
+    const msUntilNextHour = 3600000 - (Date.now() % 3600000)
+    const timeout = setTimeout(() => {
+      setIndex(Math.floor(Date.now() / 3600000) % TAUNTS.length)
+    }, msUntilNextHour)
+    return () => clearTimeout(timeout)
+  }, [index])
+
+  return (
+    <div className="taunt-message elite">"{TAUNTS[index]}"</div>
+  )
+}
+
+function LastUpdated({ lastUpdated, lastAction }) {
+  const [, forceUpdate] = useState(0)
+
+  useEffect(() => {
+    const id = setInterval(() => forceUpdate(n => n + 1), 30000)
+    return () => clearInterval(id)
+  }, [])
+
+  if (!lastUpdated || !lastAction || lastAction.count === 0) return null
+
+  const diffMs = Date.now() - lastUpdated.getTime()
+  const diffMins = Math.floor(diffMs / 60000)
+  const diffHours = Math.floor(diffMins / 60)
+
+  let timeLabel
+  if (diffMins < 1) timeLabel = 'just now'
+  else if (diffMins < 60) timeLabel = `${diffMins} minute${diffMins === 1 ? '' : 's'} ago`
+  else timeLabel = `${diffHours} hour${diffHours === 1 ? '' : 's'} ago`
+
+  const ACTION_LABELS = {
+    milk: (n) => `drank his ${ordinal(n)} pint of milk`,
+    miles: (n) => `ran his ${ordinal(n)} mile`,
+    beers: (n) => `drank his ${ordinal(n)} beer`,
+    donuts: (n) => `ate his ${ordinal(n)} donut`,
+  }
+
+  function ordinal(n) {
+    const s = ['first','second','third','fourth','fifth','sixth','seventh','eighth','ninth','tenth','eleventh','twelfth']
+    return s[n - 1] || `${n}th`
+  }
+
+  const actionText = ACTION_LABELS[lastAction.item]?.(lastAction.count) || 'checked something off'
+
+  return (
+    <div className="last-updated elite">Micah last {actionText} {timeLabel}</div>
+  )
 }
 
 // ─── PROGRESS CARD ──────────────────────────────────────────────────────────
@@ -177,7 +242,7 @@ function StravaSection({ stravaUrl, isAdmin, onSave }) {
           🔗 View Strava Activity →
         </a>
       ) : !stravaUrl && !editing ? (
-        <div className="strava-placeholder elite">Strava link will appear here once the run begins...</div>
+        <div className="strava-placeholder elite">Strava link will appear here once the run concludes...</div>
       ) : null}
     </div>
   )
@@ -188,18 +253,18 @@ function StravaSection({ stravaUrl, isAdmin, onSave }) {
 const CLOUDINARY_CLOUD = 'dnnpkrhpq'
 const CLOUDINARY_PRESET = 'march_madness'
 
-function MediaUpload({ onUploaded }) {
-  const [unlocked, setUnlocked] = useState(false)
+function MediaUpload({ onUploaded, unlocked, onUnlock }) {
   const [pwInput, setPwInput] = useState('')
   const [pwError, setPwError] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
   const [uploadError, setUploadError] = useState(null)
+  const [uploaderName, setUploaderName] = useState('')
   const fileRef = useRef()
 
   function tryUnlock() {
     if (pwInput.trim() === UPLOAD_PASSWORD) {
-      setUnlocked(true)
+      onUnlock()
       setPwError(false)
     } else {
       setPwError(true)
@@ -235,6 +300,7 @@ function MediaUpload({ onUploaded }) {
             url: data.secure_url,
             type: isVideo ? 'video' : 'image',
             name: file.name,
+            uploaderName: uploaderName.trim() || 'Anonymous',
             createdAt: serverTimestamp(),
           })
           setUploading(false)
@@ -285,6 +351,15 @@ function MediaUpload({ onUploaded }) {
       <div className="upload-lock-title bebas">📸 Upload to the Wall of Shame</div>
       <div className="upload-lock-sub elite">Photos & videos from your camera roll</div>
       <input
+        className="text-input"
+        type="text"
+        placeholder="Your name (optional)"
+        value={uploaderName}
+        onChange={e => setUploaderName(e.target.value)}
+        maxLength={40}
+        style={{ marginBottom: '10px' }}
+      />
+      <input
         ref={fileRef}
         type="file"
         accept="image/*,video/*"
@@ -306,6 +381,125 @@ function MediaUpload({ onUploaded }) {
   )
 }
 
+// ─── COMMENTS ───────────────────────────────────────────────────────────────
+function CommentFeed({ comments, isAdmin, unlocked, onUnlock }) {
+  const [pwInput, setPwInput] = useState('')
+  const [pwError, setPwError] = useState(false)
+  const [name, setName] = useState('')
+  const [text, setText] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState(null)
+
+  function tryUnlock() {
+    if (pwInput.trim() === UPLOAD_PASSWORD) {
+      onUnlock()
+      setPwError(false)
+    } else {
+      setPwError(true)
+      setPwInput('')
+    }
+  }
+
+  async function handleSubmit() {
+    if (!text.trim()) return
+    setSubmitting(true)
+    setError(null)
+    try {
+      await addDoc(collection(db, 'comments'), {
+        name: name.trim() || 'Anonymous',
+        text: text.trim(),
+        createdAt: serverTimestamp(),
+      })
+      setText('')
+    } catch (e) {
+      setError('Failed to post. Try again.')
+    }
+    setSubmitting(false)
+  }
+
+  async function handleDeleteComment(id) {
+    if (!window.confirm('Delete this comment?')) return
+    const { deleteDoc, doc: firestoreDoc } = await import('firebase/firestore')
+    await firestoreDoc && deleteDoc(firestoreDoc(db, 'comments', id))
+  }
+
+  return (
+    <div className="comment-section">
+      {!unlocked ? (
+        <div className="upload-lock">
+          <div className="upload-lock-title bebas">💬 Leave a Comment</div>
+          <div className="upload-lock-sub elite">Enter the password to comment</div>
+          <div className="pw-row">
+            <input
+              className={`text-input ${pwError ? 'input-error' : ''}`}
+              type="password"
+              placeholder="Password..."
+              value={pwInput}
+              onChange={e => { setPwInput(e.target.value); setPwError(false) }}
+              onKeyDown={e => e.key === 'Enter' && tryUnlock()}
+            />
+            <button className="btn-primary" onClick={tryUnlock}>Unlock</button>
+          </div>
+          {pwError && <div className="error-msg">Wrong password, try again.</div>}
+        </div>
+      ) : (
+        <div className="comment-form">
+          <div className="upload-lock-title bebas">💬 Leave a Comment</div>
+          <input
+            className="text-input"
+            type="text"
+            placeholder="Your name (optional)"
+            value={name}
+            onChange={e => setName(e.target.value)}
+            maxLength={40}
+            style={{ marginBottom: '8px' }}
+          />
+          <textarea
+            className="text-input comment-textarea"
+            placeholder="Say something encouraging. Or don't."
+            value={text}
+            onChange={e => setText(e.target.value)}
+            maxLength={255}
+            rows={3}
+          />
+          <div className="comment-char-count">{text.length}/255</div>
+          {error && <div className="error-msg">{error}</div>}
+          <button
+            className="btn-primary"
+            onClick={handleSubmit}
+            disabled={submitting || !text.trim()}
+            style={{ marginTop: '8px' }}
+          >
+            {submitting ? 'Posting...' : 'Post'}
+          </button>
+        </div>
+      )}
+
+      <div className="comment-list">
+        {comments.length === 0 ? (
+          <div className="media-empty elite">No comments yet. Be the first.</div>
+        ) : (
+          comments.map(c => (
+            <div key={c.id} className="comment-item">
+              <div className="comment-header">
+                <span className="comment-name">{c.name || 'Anonymous'}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span className="media-time">
+                    {c.createdAt?.toDate ? c.createdAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                  </span>
+                  {isAdmin && (
+                    <button className="comment-delete" onClick={() => handleDeleteComment(c.id)} title="Delete">✕</button>
+                  )}
+                </div>
+              </div>
+              <div className="comment-text elite">{c.text}</div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  )
+}
 
 // ─── MEDIA WALL ─────────────────────────────────────────────────────────────
 function MediaWall({ items, isAdmin, onDelete }) {
@@ -326,7 +520,11 @@ function MediaWall({ items, isAdmin, onDelete }) {
           ) : (
             <img src={item.url} alt="moment of shame" className="media-asset" />
           )}
-	  {isAdmin && (
+          <div className="media-meta">
+            <span className="media-uploader">{item.uploaderName || 'Anonymous'}</span>
+            <span className="media-time">{item.createdAt?.toDate ? item.createdAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</span>
+          </div>
+          {isAdmin && (
             <button className="media-delete" onClick={() => onDelete(item.id, item.url)} title="Delete">✕</button>
           )}
         </div>
@@ -382,7 +580,11 @@ export default function App() {
   const [progress, setProgress] = useState({ milk: 0, miles: 0, beers: 0, donuts: 0 })
   const [stravaUrl, setStravaUrl] = useState('')
   const [mediaItems, setMediaItems] = useState([])
+  const [comments, setComments] = useState([])
+  const [lastUpdated, setLastUpdated] = useState(null)
+  const [lastAction, setLastAction] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [uploadUnlocked, setUploadUnlocked] = useState(false)
 
   // ── Firestore: load + sync progress ──
   useEffect(() => {
@@ -396,6 +598,8 @@ export default function App() {
           donuts: data.donuts || 0,
         })
         setStravaUrl(data.stravaUrl || '')
+        if (data.lastUpdated) setLastUpdated(data.lastUpdated.toDate())
+        if (data.lastAction) setLastAction(data.lastAction)
       }
       setLoading(false)
     })
@@ -407,6 +611,15 @@ export default function App() {
     const q = query(collection(db, 'media'), orderBy('createdAt', 'desc'))
     const unsub = onSnapshot(q, snap => {
       setMediaItems(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    })
+    return () => unsub()
+  }, [])
+
+  // ── Firestore: load + sync comments ──
+  useEffect(() => {
+    const q = query(collection(db, 'comments'), orderBy('createdAt', 'desc'))
+    const unsub = onSnapshot(q, snap => {
+      setComments(snap.docs.map(d => ({ id: d.id, ...d.data() })))
     })
     return () => unsub()
   }, [])
@@ -434,7 +647,8 @@ export default function App() {
     }
     const newProgress = { ...progress, [itemId]: next }
     setProgress(newProgress)
-    await setDoc(doc(db, 'challenge', 'progress'), { ...newProgress, stravaUrl }, { merge: true })
+    const action = { item: itemId, count: next }
+    await setDoc(doc(db, 'challenge', 'progress'), { ...newProgress, stravaUrl, lastUpdated: serverTimestamp(), lastAction: action }, { merge: true })
   }
 
   // Delete media
@@ -459,6 +673,36 @@ export default function App() {
   const totalDone = CHALLENGE_ITEMS.reduce((a, c) => a + (progress[c.id] || 0), 0)
   const overallPct = Math.round((totalDone / totalItems) * 100)
   const allDone = totalDone === totalItems
+  const prevAllDone = useRef(false)
+  const prevCategoryDone = useRef({})
+
+  useEffect(() => {
+    if (allDone && !prevAllDone.current) {
+      confetti({
+        particleCount: 200,
+        spread: 90,
+        origin: { y: 0.6 },
+        colors: ['#f47b20', '#f5f0e8', '#ffffff', '#c45f10'],
+      })
+    } else if (!allDone) {
+      CHALLENGE_ITEMS.forEach(item => {
+        const isDone = (progress[item.id] || 0) >= item.total
+        const wasDone = prevCategoryDone.current[item.id] || false
+        if (isDone && !wasDone) {
+          confetti({
+            particleCount: 80,
+            spread: 60,
+            origin: { y: 0.6 },
+            colors: [item.color, '#ffffff'],
+          })
+        }
+      })
+    }
+    prevAllDone.current = allDone
+    prevCategoryDone.current = Object.fromEntries(
+      CHALLENGE_ITEMS.map(item => [item.id, (progress[item.id] || 0) >= item.total])
+    )
+  }, [allDone, progress])
 
   return (
     <div className="app">
@@ -466,8 +710,17 @@ export default function App() {
       <header className="hero">
         <div className="hero-badge marker">BRACKET LOSER 2026</div>
         <h1 className="hero-title bebas">
-          <span className="rip">R.I.P.</span>
-          <span className="name">Micah</span>
+          {allDone ? (
+            <>
+              <span className="name">Micah</span>
+              <span className="rip">LIVES!</span>
+            </>
+          ) : (
+            <>
+              <span className="rip">R.I.P.</span>
+              <span className="name">Micah</span>
+            </>
+          )}
         </h1>
         <div className="hero-sub elite">
           Beloved friend. Terrible bracket picker.<br />
@@ -509,6 +762,8 @@ export default function App() {
           <div className="overall-bar">
             <div className="overall-fill" style={{ width: `${overallPct}%` }} />
           </div>
+          <LastUpdated lastUpdated={lastUpdated} lastAction={lastAction} />
+          <TauntMessage />
         </div>
       </header>
 
@@ -553,8 +808,14 @@ export default function App() {
       {/* ── MEDIA ── */}
       <section className="section">
         <div className="section-title bebas">📸 Wall of Shame</div>
-        <MediaUpload onUploaded={() => {}} />
+        <MediaUpload onUploaded={() => {}} unlocked={uploadUnlocked} onUnlock={() => setUploadUnlocked(true)} />
         <MediaWall items={mediaItems} isAdmin={isAdmin} onDelete={handleDeleteMedia} />
+      </section>
+
+      {/* ── COMMENTS ── */}
+      <section className="section">
+        <div className="section-title bebas">💬 Comments</div>
+        <CommentFeed comments={comments} isAdmin={isAdmin} unlocked={uploadUnlocked} onUnlock={() => setUploadUnlocked(true)} />
       </section>
 
       {/* ── FOOTER ── */}
