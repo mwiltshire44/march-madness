@@ -153,7 +153,7 @@ function LastUpdated({ lastUpdated, lastAction }) {
   const actionText = ACTION_LABELS[lastAction.item]?.(lastAction.count) || 'checked something off'
 
   return (
-    <div className="last-updated elite">Micah last {actionText} {timeLabel}</div>
+    <div className="last-updated elite">Micah {actionText} {timeLabel}</div>
   )
 }
 
@@ -205,49 +205,212 @@ function ProgressCard({ item, completed, isAdmin, onToggle }) {
   )
 }
 
-// ─── STRAVA SECTION ─────────────────────────────────────────────────────────
-function StravaSection({ stravaUrl, isAdmin, onSave }) {
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(stravaUrl || '')
+// ─── RUN SECTION ────────────────────────────────────────────────────────────
+function formatPace(raw) {
+  const digits = raw.replace(/\D/g, '').padStart(3, '0')
+  const secs = parseInt(digits.slice(-2))
+  const mins = parseInt(digits.slice(0, -2)) + (secs >= 60 ? Math.floor(secs / 60) : 0)
+  const finalSecs = secs >= 60 ? secs % 60 : secs
+  return `${String(mins).padStart(2, '0')}:${String(finalSecs).padStart(2, '0')}`
+}
 
-  function handleSave() {
-    onSave(draft.trim())
+function formatDuration(raw) {
+  const digits = raw.replace(/\D/g, '').padStart(6, '0')
+  let secs = parseInt(digits.slice(-2))
+  let mins = parseInt(digits.slice(-4, -2))
+  let hrs = parseInt(digits.slice(0, -4))
+  if (secs >= 60) { mins += Math.floor(secs / 60); secs = secs % 60 }
+  if (mins >= 60) { hrs += Math.floor(mins / 60); mins = mins % 60 }
+  return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+}
+
+function formatSteps(raw) {
+  return parseInt(raw.replace(/\D/g, '') || '0').toLocaleString()
+}
+
+function previewStat(type, val) {
+  if (!val) return ''
+  switch (type) {
+    case 'distance': return `→ ${val} km`
+    case 'pace': return `→ ${formatPace(val)} / km`
+    case 'duration': return `→ ${formatDuration(val)}`
+    case 'elevation': return `→ ${val} m`
+    case 'steps': return `→ ${formatSteps(val)}`
+    default: return ''
+  }
+}
+
+const DEFAULT_RUN_STATS = {
+  distance: '',
+  avgPace: '',
+  movingTime: '',
+  elevationGain: '',
+  maxElevation: '',
+  steps: '',
+}
+
+function RunSection({ runData, isAdmin, onSave }) {
+  const [editing, setEditing] = useState(false)
+  const [stats, setStats] = useState(runData?.stats || DEFAULT_RUN_STATS)
+  const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
+  const fileRef = useRef()
+
+  useEffect(() => {
+    if (runData?.stats) setStats(runData.stats)
+  }, [runData])
+
+  async function handleMapPhoto(e) {
+    const file = e.target.files[0]
+    if (!file) return
+    setUploading(true)
+    setUploadProgress(0)
+
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('upload_preset', 'march_madness')
+
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `https://api.cloudinary.com/v1_1/dnnpkrhpq/image/upload`)
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) setUploadProgress(Math.round((e.loaded / e.total) * 100))
+    }
+    xhr.onload = async () => {
+      if (xhr.status === 200) {
+        const data = JSON.parse(xhr.responseText)
+        await onSave({ ...runData, mapUrl: data.secure_url })
+      }
+      setUploading(false)
+      if (fileRef.current) fileRef.current.value = ''
+    }
+    xhr.onerror = () => setUploading(false)
+    xhr.send(formData)
+  }
+
+  async function handleStatsSave() {
+    const formatted = {
+      distance: stats.distance ? `${stats.distance} km` : '',
+      avgPace: stats.avgPace ? formatPace(stats.avgPace) + ' / km' : '',
+      movingTime: stats.movingTime ? formatDuration(stats.movingTime) : '',
+      elevationGain: stats.elevationGain ? `${stats.elevationGain} m` : '',
+      maxElevation: stats.maxElevation ? `${stats.maxElevation} m` : '',
+      steps: stats.steps ? formatSteps(stats.steps) : '',
+    }
+    await onSave({ ...runData, stats: formatted })
     setEditing(false)
   }
 
+  const hasAnyData = runData?.mapUrl || Object.values(runData?.stats || {}).some(v => v)
+
   return (
-    <div className="strava-section">
-      <div className="section-title bebas">🏃 The Run</div>
-      {isAdmin && !editing && (
-        <button className="btn-ghost small" onClick={() => setEditing(true)}>
-          {stravaUrl ? '✏️ Update Strava Link' : '+ Add Strava Link'}
-        </button>
+    <div className="run-section">
+      {!hasAnyData && !isAdmin && (
+        <div className="strava-placeholder elite">Run stats will appear here once the run is complete...</div>
       )}
-      {editing && (
-        <div className="strava-edit">
-          <input
-            className="text-input"
-            placeholder="Paste your Strava activity URL..."
-            value={draft}
-            onChange={e => setDraft(e.target.value)}
-          />
-          <div className="row-gap">
-            <button className="btn-primary small" onClick={handleSave}>Save</button>
-            <button className="btn-ghost small" onClick={() => setEditing(false)}>Cancel</button>
-          </div>
+
+      {runData?.mapUrl && (
+        <div className="run-map-wrap">
+          <img src={runData.mapUrl} alt="run map" className="run-map" />
+          {isAdmin && (
+            <button className="btn-ghost small" style={{ marginTop: '8px' }} onClick={async () => {
+              if (!window.confirm('Delete the run map photo?')) return
+              await onSave({ ...runData, mapUrl: null })
+            }}>✕ Remove Map Photo</button>
+          )}
         </div>
       )}
-      {stravaUrl && !editing ? (
-        <a className="strava-link" href={stravaUrl} target="_blank" rel="noopener noreferrer">
-          🔗 View Strava Activity →
-        </a>
-      ) : !stravaUrl && !editing ? (
-        <div className="strava-placeholder elite">Strava link will appear here once the run concludes...</div>
-      ) : null}
+
+      {runData?.stats && Object.values(runData.stats).some(v => v) && (
+        <div className="run-stats-grid">
+          {runData.stats.distance && (
+            <div className="run-stat">
+              <div className="run-stat-label elite">Distance</div>
+              <div className="run-stat-value bebas">{runData.stats.distance}</div>
+            </div>
+          )}
+          {runData.stats.avgPace && (
+            <div className="run-stat">
+              <div className="run-stat-label elite">Avg Pace</div>
+              <div className="run-stat-value bebas">{runData.stats.avgPace}</div>
+            </div>
+          )}
+          {runData.stats.movingTime && (
+            <div className="run-stat">
+              <div className="run-stat-label elite">Moving Time</div>
+              <div className="run-stat-value bebas">{runData.stats.movingTime}</div>
+            </div>
+          )}
+          {runData.stats.elevationGain && (
+            <div className="run-stat">
+              <div className="run-stat-label elite">Elevation Gain</div>
+              <div className="run-stat-value bebas">{runData.stats.elevationGain}</div>
+            </div>
+          )}
+          {runData.stats.maxElevation && (
+            <div className="run-stat">
+              <div className="run-stat-label elite">Max Elevation</div>
+              <div className="run-stat-value bebas">{runData.stats.maxElevation}</div>
+            </div>
+          )}
+          {runData.stats.steps && (
+            <div className="run-stat">
+              <div className="run-stat-label elite">Steps</div>
+              <div className="run-stat-value bebas">{runData.stats.steps}</div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {isAdmin && (
+        <div className="run-admin">
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            onChange={handleMapPhoto}
+            style={{ display: 'none' }}
+            id="map-upload"
+          />
+          <label htmlFor="map-upload" className={`btn-ghost small ${uploading ? 'uploading' : ''}`}>
+            {uploading ? `Uploading... ${uploadProgress}%` : runData?.mapUrl ? '🗺️ Replace Map Photo' : '🗺️ Upload Map Photo'}
+          </label>
+
+          {!editing ? (
+            <button className="btn-ghost small" onClick={() => setEditing(true)} style={{ marginLeft: '8px' }}>
+              {Object.values(runData?.stats || {}).some(v => v) ? '✏️ Edit Stats' : '+ Add Stats'}
+            </button>
+          ) : (
+            <div className="run-stats-form">
+              {[
+                { key: 'distance', label: 'Distance', placeholder: '10.52', type: 'distance' },
+                { key: 'avgPace', label: 'Avg Pace', placeholder: '607', type: 'pace' },
+                { key: 'movingTime', label: 'Moving Time', placeholder: '10426', type: 'duration' },
+                { key: 'elevationGain', label: 'Elevation Gain', placeholder: '71', type: 'elevation' },
+                { key: 'maxElevation', label: 'Max Elevation', placeholder: '66', type: 'elevation' },
+                { key: 'steps', label: 'Steps', placeholder: '9402', type: 'steps' },
+              ].map(({ key, label, placeholder, type }) => (
+                <div key={key} className="run-stat-input-row">
+                  <label className="run-stat-input-label elite">{label}</label>
+                  <input
+                    className="text-input small"
+                    placeholder={placeholder}
+                    value={stats[key]}
+                    onChange={e => setStats(s => ({ ...s, [key]: e.target.value.replace(/[^0-9.]/g, '') }))}
+                  />
+                  <span style={{ fontSize: '11px', color: 'var(--text-body)' }}>{previewStat(type, stats[key])}</span>
+                </div>
+              ))}
+              <div className="row-gap" style={{ marginTop: '12px' }}>
+                <button className="btn-primary small" onClick={handleStatsSave}>Save</button>
+                <button className="btn-ghost small" onClick={() => setEditing(false)}>Cancel</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
-
 
 // ─── MEDIA UPLOAD ───────────────────────────────────────────────────────────
 const CLOUDINARY_CLOUD = 'dnnpkrhpq'
@@ -515,17 +678,19 @@ function MediaWall({ items, isAdmin, onDelete }) {
     <div className="media-grid">
       {items.map(item => (
         <div key={item.id} className="media-item">
+          <div className="media-meta">
+            <span className="media-uploader">{item.uploaderName || 'Anonymous'}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span className="media-time">{item.createdAt?.toDate ? item.createdAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</span>
+              {isAdmin && (
+                <button className="media-delete" onClick={() => onDelete(item.id)} title="Delete">✕</button>
+              )}
+            </div>
+          </div>
           {item.type === 'video' ? (
             <video src={item.url} controls playsInline className="media-asset" />
           ) : (
             <img src={item.url} alt="moment of shame" className="media-asset" />
-          )}
-          <div className="media-meta">
-            <span className="media-uploader">{item.uploaderName || 'Anonymous'}</span>
-            <span className="media-time">{item.createdAt?.toDate ? item.createdAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</span>
-          </div>
-          {isAdmin && (
-            <button className="media-delete" onClick={() => onDelete(item.id, item.url)} title="Delete">✕</button>
           )}
         </div>
       ))}
@@ -578,7 +743,7 @@ export default function App() {
   const { time, phase } = useCountdown()
   const [isAdmin, setIsAdmin] = useState(false)
   const [progress, setProgress] = useState({ milk: 0, miles: 0, beers: 0, donuts: 0 })
-  const [stravaUrl, setStravaUrl] = useState('')
+  const [runData, setRunData] = useState({})
   const [mediaItems, setMediaItems] = useState([])
   const [comments, setComments] = useState([])
   const [lastUpdated, setLastUpdated] = useState(null)
@@ -597,7 +762,7 @@ export default function App() {
           beers: data.beers || 0,
           donuts: data.donuts || 0,
         })
-        setStravaUrl(data.stravaUrl || '')
+        setRunData(data.runData || {})
         if (data.lastUpdated) setLastUpdated(data.lastUpdated.toDate())
         if (data.lastAction) setLastAction(data.lastAction)
       }
@@ -648,25 +813,20 @@ export default function App() {
     const newProgress = { ...progress, [itemId]: next }
     setProgress(newProgress)
     const action = { item: itemId, count: next }
-    await setDoc(doc(db, 'challenge', 'progress'), { ...newProgress, stravaUrl, lastUpdated: serverTimestamp(), lastAction: action }, { merge: true })
+    await setDoc(doc(db, 'challenge', 'progress'), { ...newProgress, runData, lastUpdated: serverTimestamp(), lastAction: action }, { merge: true })
   }
 
   // Delete media
-  async function handleDeleteMedia(id, url) {
+  async function handleDeleteMedia(id) {
     if (!window.confirm('Delete this post?')) return
     const { deleteDoc, doc: firestoreDoc } = await import('firebase/firestore')
-    const { deleteObject, ref: storageRef } = await import('firebase/storage')
-    try {
-      const path = decodeURIComponent(new URL(url).pathname.split('/o/')[1].split('?')[0])
-      await deleteObject(storageRef(storage, path))
-    } catch (e) { console.warn('Storage delete failed', e) }
     await deleteDoc(firestoreDoc(db, 'media', id))
   }
 
-  // ── Save strava URL ──
-  async function handleStravaUrl(url) {
-    setStravaUrl(url)
-    await setDoc(doc(db, 'challenge', 'progress'), { ...progress, stravaUrl: url }, { merge: true })
+  // ── Handle run data ──
+  async function handleRunData(data) {
+    setRunData(data)
+    await setDoc(doc(db, 'challenge', 'progress'), { ...progress, runData: data }, { merge: true })
   }
 
   const totalItems = CHALLENGE_ITEMS.reduce((a, c) => a + c.total, 0)
@@ -796,12 +956,13 @@ export default function App() {
         )}
       </section>
 
-      {/* ── STRAVA ── */}
+      {/* ── RUN ── */}
       <section className="section">
-        <StravaSection
-          stravaUrl={stravaUrl}
+        <div className="section-title bebas">🏃 The Run</div>
+        <RunSection
+          runData={runData}
           isAdmin={isAdmin}
-          onSave={handleStravaUrl}
+          onSave={handleRunData}
         />
       </section>
 
