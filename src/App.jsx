@@ -590,7 +590,7 @@ function CommentFeed({ comments, isAdmin, unlocked, onUnlock }) {
     <div className="comment-section">
       {!unlocked ? (
         <div className="upload-lock">
-          <div className="upload-lock-title bebas">💬 Leave a Comment</div>
+          <div className="upload-lock-title bebas">💬 Cheer him on!</div>
           <div className="upload-lock-sub elite">Enter the password to comment</div>
           <div className="pw-row">
             <input
@@ -750,6 +750,7 @@ export default function App() {
   const [lastAction, setLastAction] = useState(null)
   const [loading, setLoading] = useState(true)
   const [uploadUnlocked, setUploadUnlocked] = useState(false)
+  const [completionTimes, setCompletionTimes] = useState({})
 
   // ── Firestore: load + sync progress ──
   useEffect(() => {
@@ -765,6 +766,12 @@ export default function App() {
         setRunData(data.runData || {})
         if (data.lastUpdated) setLastUpdated(data.lastUpdated.toDate())
         if (data.lastAction) setLastAction(data.lastAction)
+        const times = {}
+        CHALLENGE_ITEMS.forEach(item => {
+          if (data[`completedAt_${item.id}`]) times[item.id] = data[`completedAt_${item.id}`].toMillis()
+        })
+        if (data.completedAt_all) times.all = data.completedAt_all.toMillis()
+        setCompletionTimes(times)
       }
       setLoading(false)
     })
@@ -813,7 +820,33 @@ export default function App() {
     const newProgress = { ...progress, [itemId]: next }
     setProgress(newProgress)
     const action = { item: itemId, count: next }
-    await setDoc(doc(db, 'challenge', 'progress'), { ...newProgress, runData, lastUpdated: serverTimestamp(), lastAction: action }, { merge: true })
+
+    const updates = { ...newProgress, runData, lastUpdated: serverTimestamp(), lastAction: action }
+
+    // Record when a category is first completed
+    CHALLENGE_ITEMS.forEach(item => {
+      const isDone = (newProgress[item.id] || 0) >= item.total
+      const wasDone = (progress[item.id] || 0) >= item.total
+      if (isDone && !wasDone) {
+        updates[`completedAt_${item.id}`] = serverTimestamp()
+      }
+      // Clear timestamp if uncompleted
+      if (!isDone && wasDone) {
+        updates[`completedAt_${item.id}`] = null
+      }
+    })
+
+    // Record when all tasks are first completed
+    const allNowDone = CHALLENGE_ITEMS.every(item => (newProgress[item.id] || 0) >= item.total)
+    const allWereDone = CHALLENGE_ITEMS.every(item => (progress[item.id] || 0) >= item.total)
+    if (allNowDone && !allWereDone) {
+      updates.completedAt_all = serverTimestamp()
+    }
+    if (!allNowDone && allWereDone) {
+      updates.completedAt_all = null
+    }
+
+    await setDoc(doc(db, 'challenge', 'progress'), updates, { merge: true })
   }
 
   // Delete media
@@ -836,9 +869,14 @@ export default function App() {
   const prevAllDone = useRef(false)
   const prevCategoryDone = useRef({})
 
+  const firedConfetti = useRef({})
+
   useEffect(() => {
-    if (allDone && !prevAllDone.current) {
-      const colors = ['#f47b20', '#f5f0e8', '#ffffff', '#c45f10']
+    const colors = ['#f47b20', '#f5f0e8', '#ffffff', '#c45f10']
+
+    // Check overall completion
+    if (completionTimes.all && !firedConfetti.current.all) {
+      firedConfetti.current.all = true
       const positions = [
         { x: 0.5, y: 0.6 },
         { x: 0.2, y: 0.6 }, { x: 0.8, y: 0.4 }, { x: 0.1, y: 0.3 },
@@ -876,25 +914,29 @@ export default function App() {
           })
         }, i * 1000)
       })
-    } else if (!allDone) {
-      CHALLENGE_ITEMS.forEach(item => {
-        const isDone = (progress[item.id] || 0) >= item.total
-        const wasDone = prevCategoryDone.current[item.id] || false
-        if (isDone && !wasDone) {
-          confetti({
-            particleCount: 80,
-            spread: 60,
-            origin: { y: 0.6 },
-            colors: [item.color, '#ffffff'],
-          })
-        }
-      })
     }
-    prevAllDone.current = allDone
-    prevCategoryDone.current = Object.fromEntries(
-      CHALLENGE_ITEMS.map(item => [item.id, (progress[item.id] || 0) >= item.total])
-    )
-  }, [allDone, progress])
+
+    // If all completion cleared, allow re-firing
+    if (!completionTimes.all) {
+      firedConfetti.current.all = false
+    }
+
+    // Check individual category completions
+    CHALLENGE_ITEMS.forEach(item => {
+      if (completionTimes[item.id] && !firedConfetti.current[item.id]) {
+        firedConfetti.current[item.id] = true
+        confetti({
+          particleCount: 80,
+          spread: 60,
+          origin: { y: 0.6 },
+          colors: [item.color, '#ffffff'],
+        })
+      }
+      if (!completionTimes[item.id]) {
+        firedConfetti.current[item.id] = false
+      }
+    })
+  }, [completionTimes])
 
   return (
     <div className="app">
