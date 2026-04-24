@@ -838,11 +838,43 @@ export default function App() {
 
   useEffect(() => {
     if (allDone && !prevAllDone.current) {
-      confetti({
-        particleCount: 200,
-        spread: 90,
-        origin: { y: 0.6 },
-        colors: ['#f47b20', '#f5f0e8', '#ffffff', '#c45f10'],
+      const colors = ['#f47b20', '#f5f0e8', '#ffffff', '#c45f10']
+      const positions = [
+        { x: 0.5, y: 0.6 },
+        { x: 0.2, y: 0.6 }, { x: 0.8, y: 0.4 }, { x: 0.1, y: 0.3 },
+        { x: 0.9, y: 0.6 }, { x: 0.4, y: 0.5 }, { x: 0.7, y: 0.3 },
+        { x: 0.3, y: 0.7 }, { x: 0.6, y: 0.4 }, { x: 0.5, y: 0.2 },
+        { x: 0.2, y: 0.5 }, { x: 0.8, y: 0.7 }, { x: 0.4, y: 0.3 },
+        { x: 0.7, y: 0.6 }, { x: 0.3, y: 0.4 }, { x: 0.6, y: 0.7 },
+        { x: 0.1, y: 0.6 }, { x: 0.9, y: 0.3 }, { x: 0.5, y: 0.5 },
+        { x: 0.2, y: 0.3 }, { x: 0.8, y: 0.6 }, { x: 0.4, y: 0.2 },
+        { x: 0.7, y: 0.5 }, { x: 0.3, y: 0.3 }, { x: 0.6, y: 0.6 },
+        { x: 0.1, y: 0.5 }, { x: 0.9, y: 0.4 }, { x: 0.5, y: 0.3 },
+        { x: 0.2, y: 0.7 }, { x: 0.8, y: 0.2 }, { x: 0.4, y: 0.6 },
+        { x: 0.7, y: 0.4 }, { x: 0.3, y: 0.5 }, { x: 0.6, y: 0.3 },
+        { x: 0.5, y: 0.7 }, { x: 0.1, y: 0.4 }, { x: 0.9, y: 0.5 },
+        { x: 0.4, y: 0.7 }, { x: 0.7, y: 0.2 }, { x: 0.2, y: 0.4 },
+      ]
+      positions.forEach((origin, i) => {
+        setTimeout(() => {
+          let angle
+          if (i === 0) {
+            angle = 90
+          } else if (origin.x < 0.4) {
+            angle = 45 + Math.floor(Math.random() * 30)
+          } else if (origin.x > 0.6) {
+            angle = 105 + Math.floor(Math.random() * 30)
+          } else {
+            angle = 70 + Math.floor(Math.random() * 40)
+          }
+          confetti({
+            particleCount: 150 + Math.floor(Math.random() * 100),
+            spread: 90 + Math.floor(Math.random() * 50),
+            origin,
+            colors,
+            angle,
+          })
+        }, i * 1000)
       })
     } else if (!allDone) {
       CHALLENGE_ITEMS.forEach(item => {
@@ -907,8 +939,8 @@ export default function App() {
             </>
           )}
           {phase === 'over' && (
-            <div className="countdown bebas countdown-red">
-              {allDone ? '🎉 HE DID IT 🎉' : '⏰ TIME\'S UP'}
+            <div className={`countdown bebas ${allDone ? 'countdown-green' : 'countdown-red'}`}>
+              {allDone ? '🎉 SUCCESS 🎉' : <span>❌ TIME'S UP ❌</span>}
             </div>
           )}
         </div>
